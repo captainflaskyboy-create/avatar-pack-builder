@@ -796,7 +796,7 @@ public sealed class MainWindow : Window
             ClearIcon();
             _sheetImage?.Dispose();
             _sheetPreviewBitmap?.Dispose();
-            _sheetImage = SpriteSheetLoader.Load(path);
+            _sheetImage = SixLabors.ImageSharp.Image.Load<Rgba32>(path);
             _sheetPreviewBitmap = new Bitmap(path);
             _sheetPath = path;
             _sheetInfoText.Text = $"{Path.GetFileName(path)}\nWidth: {_sheetImage.Width}px\nHeight: {_sheetImage.Height}px";

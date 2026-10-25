@@ -86,12 +86,19 @@ Report bugs and suggest changes through this repository's GitHub Issues.
 
 ## Dependency security status
 
-The first release retains ImageSharp 3.1.11, which has known NuGet advisories.
-APB restricts sheet decoding to PNG, JPEG, and BMP, skips embedded metadata,
-and exports only PNG/GIF/ICO. TIFF decoding/encoding and histogram equalization
-are not exposed by APB. These restrictions reduce exposure to the reported
-issues; they do not patch the underlying library or clear its advisories.
-Process only images from sources you trust.
+The first release preserves the original image-processing code and retains
+ImageSharp 3.1.11, which has known moderate and high severity NuGet advisories.
+These dependency issues are unresolved in v1.0.0. Process only images from
+sources you trust; the file picker's filters are not a security boundary.
 
-Upgrading to the patched ImageSharp 4.1.2 requires provisioning the vendor's
-build-time license key. No license key or other secret is included here.
+The intended fix is to migrate image processing and exports to SkiaSharp,
+following the approach used in Stream Avatar Studio. This migration is planned
+and is not included in this release. It must preserve frame naming, transparency,
+icon sizes, GIF timing, and avatar-pack compatibility.
+
+ImageSharp advisory references:
+- [ICC profile allocation](https://github.com/advisories/GHSA-gwg2-r3hj-4w44)
+- [Histogram index validation](https://github.com/advisories/GHSA-j3p4-wp97-rph4)
+- [TIFF T4 output buffer](https://github.com/advisories/GHSA-j9gm-c75j-xc9q)
+- [TIFF T6 output buffer](https://github.com/advisories/GHSA-jjfr-hcj7-qf5w)
+- [BigTIFF decoder loop](https://github.com/advisories/GHSA-wmxv-xphr-5c9g)
