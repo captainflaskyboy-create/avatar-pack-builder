@@ -7,6 +7,21 @@ Made by **Captain Flasky Studio**.
 APB is a standalone Avalonia desktop application. You do not need Stream Avatar
 Studio or PixelSpriteTalker to build or run it.
 
+## Video demo
+
+[Watch the APB demo on YouTube](https://www.youtube.com/watch?v=itH0s95IqN0&t=73s)
+(starts at 1:13). Click the preview below to open the video.
+
+[![Avatar Pack Builder importing a sprite sheet with a slice-grid preview](docs/images/import-sheet.png)](https://www.youtube.com/watch?v=itH0s95IqN0&t=73s)
+
+*Import a sprite sheet and line up the grid before slicing your frames.*
+
+## Screenshots
+
+![Avatar Pack Builder showing sliced frames, assigned idle roles, and an enlarged playback preview](docs/images/playback-preview.png)
+
+*Assign frames to avatar roles and preview animation playback.*
+
 ## Download for Windows
 
 Download `AvatarPackBuilder-v1.0.0-win-x64.zip` from
@@ -80,7 +95,8 @@ APB source and its included app icon are licensed under the [MIT License](LICENS
 Copyright (c) 2026 Captain Flasky Studio. Third-party dependencies retain their
 own licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and `legal/`.
 Images you load and avatar packs you create remain subject to their owners' terms.
-No avatar sprite sheets or example character artwork are bundled.
+Screenshots show example artwork for demonstration. No avatar sprite sheets or
+standalone character assets are bundled.
 
 Report bugs and suggest changes through this repository's GitHub Issues.
 
