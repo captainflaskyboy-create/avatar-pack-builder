@@ -10,6 +10,9 @@ public static class ImageSlicer
 {
     public static IReadOnlyList<SlicedFrame> Slice(Image<Rgba32> source, GridSettings settings)
     {
+        if (settings.GetBoundsError(source.Width, source.Height) is { } error)
+            throw new ArgumentException(error, nameof(settings));
+
         var frames = new List<SlicedFrame>();
         int index = 0;
 
@@ -20,14 +23,9 @@ public static class ImageSlicer
                 int x = settings.OffsetX + column * (settings.CellWidth + settings.SpacingX);
                 int y = settings.OffsetY + row * (settings.CellHeight + settings.SpacingY);
 
-                if (x < 0 || y < 0 || x + settings.CellWidth > source.Width || y + settings.CellHeight > source.Height)
-                {
-                    index++;
-                    continue;
-                }
-
                 var frame = new SlicedFrame
                 {
+                    SourceImage = source,
                     Index = index,
                     Row = row,
                     Column = column,
@@ -50,10 +48,37 @@ public static class ImageSlicer
         return CreatePreviewBitmap(source, frame.X, frame.Y, frame.Width, frame.Height, maxSize);
     }
 
-    public static void ExportFrame(Image<Rgba32> source, SlicedFrame frame, string outputPath)
+    public static Image<Rgba32> ExtractFrame(SlicedFrame frame)
     {
-        using var clone = source.Clone(ctx => ctx.Crop(new Rectangle(frame.X, frame.Y, frame.Width, frame.Height)));
+        return frame.SourceImage.Clone(ctx => ctx.Crop(new Rectangle(frame.X, frame.Y, frame.Width, frame.Height)));
+    }
+
+    public static void ExportFrame(SlicedFrame frame, string outputPath)
+    {
+        using var clone = ExtractFrame(frame);
         clone.SaveAsPng(outputPath);
+    }
+
+    public static SlicedFrame ImportFrame(string path, int index)
+    {
+        var source = Image.Load<Rgba32>(path);
+        try
+        {
+            // APB imports static images, not animated frame containers.
+            if (source.Frames.Count != 1)
+                throw new InvalidOperationException("Animated images are not supported as individual frames.");
+            return new SlicedFrame
+            {
+                SourceImage = source, IsImported = true, Index = index,
+                Width = source.Width, Height = source.Height,
+                Preview = CreatePreviewBitmap(source, 0, 0, source.Width, source.Height, 512)
+            };
+        }
+        catch
+        {
+            source.Dispose();
+            throw;
+        }
     }
 
     private static Bitmap CreatePreviewBitmap(Image<Rgba32> source, int x, int y, int width, int height, int maxSize)

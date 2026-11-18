@@ -12,7 +12,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Locked restore failed.' }
 dotnet publish $project -c Release -r win-x64 --self-contained true --no-restore -o $publish -p:DebugType=none -p:DebugSymbols=false
 if ($LASTEXITCODE -ne 0) { throw 'Publish failed.' }
 if (Get-ChildItem -LiteralPath $publish -Recurse -Filter *.pdb) { throw 'Debug symbols must not be distributed.' }
-Copy-Item -LiteralPath (Join-Path $root 'LICENSE'), (Join-Path $root 'THIRD_PARTY_NOTICES.md'), (Join-Path $root 'README.md') -Destination $publish
+Copy-Item -LiteralPath (Join-Path $root 'LICENSE'), (Join-Path $root 'THIRD_PARTY_NOTICES.md'), (Join-Path $root 'README.md'), (Join-Path $root 'CHANGELOG.md') -Destination $publish
 Copy-Item -LiteralPath (Join-Path $root 'legal') -Destination $publish -Recurse
 $archive = Join-Path $artifactRoot "$packageName.zip"
 if (Test-Path -LiteralPath $archive) { throw "Archive already exists: $archive" }

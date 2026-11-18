@@ -7,6 +7,18 @@ Made by **Captain Flasky Studio**.
 APB is a standalone Avalonia desktop application. You do not need Stream Avatar
 Studio or PixelSpriteTalker to build or run it.
 
+## New in v1.1.0
+
+- **2 Frames** replaces the Slice tab, keeping the same layout and controls.
+- Drop individual PNG, JPG/JPEG or BMP images into Frames, including multiple files.
+  Build a pack entirely from individual images or combine them with sliced frames.
+- Dropped images keep their roles, animation entries and icon selection when the
+  sheet grid is reapplied. Sprite sheets still load through **1 Import**.
+- Oversized slice grids now explain which cells do not fit instead of silently
+  dropping frames. The preview marks overflowing cells red and suggests cell sizes.
+
+See [CHANGELOG.md](CHANGELOG.md) for release details.
+
 ## Video demo
 
 [Watch the APB demo on YouTube](https://www.youtube.com/watch?v=itH0s95IqN0&t=73s)
@@ -24,7 +36,7 @@ Studio or PixelSpriteTalker to build or run it.
 
 ## Download for Windows
 
-Download `AvatarPackBuilder-v1.0.0-win-x64.zip` from
+Download `AvatarPackBuilder-v1.1.0-win-x64.zip` from
 [GitHub Releases](https://github.com/captainflaskyboy-create/avatar-pack-builder/releases),
 extract the entire ZIP, and run `AvatarPackBuilder.exe`.
 The Windows x64 release includes .NET; no separate runtime installation is needed.
@@ -33,14 +45,14 @@ The application is unsigned. License files accompany the executable.
 Verify the download using the release's `SHA256SUMS.txt` and PowerShell:
 
 ```powershell
-Get-FileHash ./AvatarPackBuilder-v1.0.0-win-x64.zip -Algorithm SHA256
+Get-FileHash ./AvatarPackBuilder-v1.1.0-win-x64.zip -Algorithm SHA256
 ```
 
 ## Make an avatar pack
 
 1. Open **1 Import**, choose **Import Sheet...**, and select your sprite sheet.
 2. Set rows, columns, cell size, offsets, and spacing so the green grid matches
-   your sheet. Select **Use These Slice Settings**, or use **2 Slice** and
+   your sheet. Select **Use These Slice Settings**, or use **2 Frames** and
    **Apply Slice Grid**.
 3. Select a sliced frame. In **Assign**, choose a mood and assign the required
    filename roles. A frame can have multiple roles. Add slots or a custom mood
@@ -56,6 +68,41 @@ include `normal_idle001.png` and `normal_talk001.png`, the two minimum required
 frames for Stream Avatar Studio. Additional roles include blink, small/large
 mouth shapes, and other moods. An optional icon is named `<pack-name>_app_icon.ico`.
 Import the resulting pack folder through Stream Avatar Studio's **Import Avatar Pack...**.
+
+Every grid cell must fit completely inside the source image. Partial cells are
+marked red in the preview, and applying an oversized grid shows the sheet/grid
+dimensions and a suggested maximum cell size. Existing frames and assignments
+are kept until valid settings are applied. For example, a 944 x 1464 sheet with
+2 columns and 3 rows fits 472 x 488 cells; 474px-wide cells extend past its edge.
+
+Windows slicing regression checks (optionally pass that 944 x 1464 sheet path):
+
+```powershell
+dotnet run --project tests/SlicingRegression/SlicingRegression.csproj -- "path/to/sheet.png"
+```
+
+Omit the path to test using an in-memory sheet. Checks cover slicing, individual-image imports, mixed-source exports, frame identity,
+assignment preservation, and replacement-sheet reset behavior.
+
+## Add individual image frames
+
+Keep using **1 Import** for sprite sheets and the existing grid workflow.
+In **2 Frames**, drop PNG, JPG/JPEG or BMP files into the central Frames panel
+(including onto an existing tile). Each file becomes one complete selectable
+frame. Multiple images append in drop order alongside any sliced sheet frames;
+select them and assign sprite-state roles with the existing controls.
+
+You can build a pack entirely from dropped images without loading a sprite
+sheet. Dropped frames work with playback, app icons and custom animations too.
+Their original dimensions and PNG transparency are retained. Animation exports
+center differently sized images in cells sized to the largest frame.
+
+Reapplying the sheet grid keeps dropped images and their assigned roles,
+animation entries and icon selection. Importing a new sprite sheet starts
+fresh, as before. Invalid files are reported in the Frames workspace without
+clearing current work. Imported image data stays in memory for the session;
+editing or moving the original files will not alter already imported frames.
+Animated image files and folders are not supported as individual frames.
 
 ## Export an animation
 
@@ -102,9 +149,9 @@ Report bugs and suggest changes through this repository's GitHub Issues.
 
 ## Dependency security status
 
-The first release preserves the original image-processing code and retains
+This release preserves the original image-processing code and retains
 ImageSharp 3.1.11, which has known moderate and high severity NuGet advisories.
-These dependency issues are unresolved in v1.0.0. Process only images from
+These dependency issues remain unresolved in v1.1.0. Process only images from
 sources you trust; the file picker's filters are not a security boundary.
 
 The intended fix is to migrate image processing and exports to SkiaSharp,

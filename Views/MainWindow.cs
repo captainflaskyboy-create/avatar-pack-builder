@@ -29,13 +29,13 @@ public sealed class MainWindow : Window
     private SharpRgbaImage? _sheetImage;
     private Bitmap? _sheetPreviewBitmap;
     private string? _sheetPath;
-    private int? _iconFrameIndex;
+    private Guid? _iconFrameId;
     private IReadOnlyList<SlicedFrame> _frames = Array.Empty<SlicedFrame>();
     private SlicedFrame? _selectedFrame;
     private SpriteState _selectedState = SpriteCatalog.States[0];
     private int _playbackIndex;
     private bool _isPlaying;
-    private readonly List<int> _animationFrameIndexes = new();
+    private readonly List<Guid> _animationFrameIds = new();
     private int _selectedAnimationEntryIndex = -1;
     private int _animatePlaybackIndex;
     private bool _isAnimatePlaying;
@@ -66,6 +66,7 @@ public sealed class MainWindow : Window
     private readonly TextBlock _sheetInfoText = new() { Text = "Drop a sprite sheet here or click Import Sheet.", Foreground = Brushes.LightGray, TextWrapping = TextWrapping.Wrap };
     private readonly TextBlock _sheetFileSizeText = new() { Text = "File size: -", Foreground = Brushes.LightGray, TextWrapping = TextWrapping.Wrap };
     private readonly TextBlock _importGridStatusText = new() { Foreground = Brushes.Gold, TextWrapping = TextWrapping.Wrap, FontSize = 12 };
+    private readonly TextBlock _sliceGridStatusText = new() { Foreground = Brushes.Gold, TextWrapping = TextWrapping.Wrap, FontSize = 12 };
     private readonly TextBlock _iconInfoText = new() { Text = "No app icon frame selected.", Foreground = Brushes.LightGray, TextWrapping = TextWrapping.Wrap };
     private readonly TextBlock _selectedFrameText = new() { Text = "No frame selected.", Foreground = Brushes.LightGray, TextWrapping = TextWrapping.Wrap };
     private readonly TextBlock _exportStatusText = new() { Foreground = Brushes.Gold, TextWrapping = TextWrapping.Wrap };
@@ -201,7 +202,7 @@ public sealed class MainWindow : Window
     {
         _setupTabs.Margin = new Thickness(0, 8, 0, 0);
         _setupTabs.Items.Add(new TabItem { Header = TabHeader("1 Import"), Content = ScrollablePanel(BuildSheetSetupPanel()) });
-        _setupTabs.Items.Add(new TabItem { Header = TabHeader("2 Slice"), Content = ScrollablePanel(BuildGridSetupPanel()) });
+        _setupTabs.Items.Add(new TabItem { Header = TabHeader("2 Frames"), Content = ScrollablePanel(BuildGridSetupPanel()) });
         _setupTabs.Items.Add(new TabItem { Header = TabHeader("3 App Icon"), Content = ScrollablePanel(BuildAppIconSetupPanel()) });
         _setupTabs.Items.Add(new TabItem { Header = TabHeader("4 Export"), Content = ScrollablePanel(BuildExportSetupPanel()) });
         _setupTabs.Items.Add(new TabItem { Header = TabHeader("5 Animate"), Content = ScrollablePanel(BuildAnimateSetupPanel()) });
@@ -262,7 +263,6 @@ public sealed class MainWindow : Window
         var useSettingsButton = SecondaryButton("Use These Slice Settings");
         useSettingsButton.Click += (_, _) => UseImportSliceSettings();
         stack.Children.Add(useSettingsButton);
-        stack.Children.Add(_importGridStatusText);
         return stack;
     }
 
@@ -315,7 +315,7 @@ public sealed class MainWindow : Window
         stack.Children.Add(Heading("Animate"));
         stack.Children.Add(new TextBlock
         {
-            Text = "Click sliced frames in the order you want them to play. Use the Animate panel on the right to preview and export.",
+            Text = "Click frames in the order you want them to play. Use the Animate panel on the right to preview and export.",
             TextWrapping = TextWrapping.Wrap,
             FontSize = 12,
             Foreground = Brushes.LightGray
@@ -430,6 +430,7 @@ public sealed class MainWindow : Window
             Foreground = Brushes.LightGray,
             TextWrapping = TextWrapping.Wrap
         });
+        top.Children.Add(_importGridStatusText);
         DockPanel.SetDock(top, Dock.Top);
         dock.Children.Add(top);
 
@@ -447,9 +448,19 @@ public sealed class MainWindow : Window
 
     private Control BuildSlicedFramesWorkspacePanel()
     {
-        var dock = new DockPanel();
+        var dock = new DockPanel { Background = Brushes.Transparent };
+        DragDrop.SetAllowDrop(dock, true);
+        dock.AddHandler(DragDrop.DragOverEvent, OnFramesDragOver);
+        dock.AddHandler(DragDrop.DropEvent, OnFramesDrop);
         var top = new StackPanel { Spacing = 4, Margin = new Thickness(0, 0, 0, 6) };
-        top.Children.Add(Heading("Sliced Frames"));
+        top.Children.Add(Heading("Frames"));
+        top.Children.Add(new TextBlock
+        {
+            Text = "Drop images here to add individual frames.",
+            Foreground = Brushes.LightGray,
+            TextWrapping = TextWrapping.Wrap
+        });
+        top.Children.Add(_sliceGridStatusText);
         top.Children.Add(_selectedFrameText);
         DockPanel.SetDock(top, Dock.Top);
         dock.Children.Add(top);
@@ -650,7 +661,7 @@ public sealed class MainWindow : Window
         stack.Children.Add(Heading("Custom Animation"));
         stack.Children.Add(new TextBlock
         {
-            Text = "Select 5 Animate, then click sliced frames to append them here.",
+            Text = "Select 5 Animate, then click frames to append them here.",
             TextWrapping = TextWrapping.Wrap,
             FontSize = 12,
             Foreground = Brushes.LightGray
@@ -782,27 +793,104 @@ public sealed class MainWindow : Window
 
     private async void OnDrop(object? sender, DragEventArgs e)
     {
+        if (e.Handled)
+            return;
         var file = e.Data.GetFiles()?.FirstOrDefault();
         if (file?.Path.LocalPath is { Length: > 0 } path)
             await LoadSheetAsync(path);
     }
 
+    private static bool IsFrameImagePath(string path)
+    {
+        return Path.GetExtension(path).ToLowerInvariant() is ".png" or ".jpg" or ".jpeg" or ".bmp";
+    }
+
+    private void OnFramesDragOver(object? sender, DragEventArgs e)
+    {
+        e.Handled = true;
+        e.DragEffects = e.Data.GetFiles()?.Any(file =>
+            file is IStorageFile && file.TryGetLocalPath() is { } path && IsFrameImagePath(path)) == true
+            ? DragDropEffects.Copy : DragDropEffects.None;
+    }
+
+    private void OnFramesDrop(object? sender, DragEventArgs e)
+    {
+        // Never allow a frame drop (even an invalid one) to replace the sprite sheet.
+        e.Handled = true;
+        var paths = e.Data.GetFiles()?.Select(file => file.TryGetLocalPath()).OfType<string>().ToList();
+        if (paths is { Count: > 0 })
+            AppendImageFiles(paths);
+    }
+
+    private IReadOnlyList<string> AppendImageFiles(IEnumerable<string> paths)
+    {
+        var added = new List<SlicedFrame>();
+        var errors = new List<string>();
+        foreach (var path in paths)
+        {
+            try
+            {
+                if (!IsFrameImagePath(path) || Directory.Exists(path))
+                    throw new InvalidOperationException("Use a PNG, JPG/JPEG or BMP image file.");
+                added.Add(ImageSlicer.ImportFrame(path, _frames.Count + added.Count));
+            }
+            catch (Exception ex)
+            {
+                errors.Add($"{Path.GetFileName(path)}: {ex.Message}");
+            }
+        }
+
+        if (added.Count > 0)
+        {
+            _frames = _frames.Concat(added).ToList();
+            RenumberFrames();
+            _selectedFrame = added[0];
+            RefreshFramesPanel();
+            RefreshSelectionText();
+            RefreshSelectedFrameRoles();
+            RefreshPlayback();
+            RefreshAnimatePanel();
+            ShowAnimateFrame();
+            // Run after layout so a newly appended tile can be brought into view.
+            var firstTile = _framePanel.Children[_frames.Count - added.Count];
+            Dispatcher.UIThread.Post(() => firstTile.BringIntoView(), DispatcherPriority.Loaded);
+        }
+
+        _sliceGridStatusText.Text = $"Added {added.Count} image frame(s). {_frames.Count} frames total."
+            + (errors.Count == 0 ? string.Empty : $" Skipped {errors.Count} file(s): {string.Join("; ", errors.Take(3))}"
+                + (errors.Count > 3 ? "; additional files could not be imported." : string.Empty));
+        return errors;
+    }
+
+    private void RenumberFrames()
+    {
+        for (int i = 0; i < _frames.Count; i++)
+            _frames[i].Index = i;
+    }
+
     private async Task LoadSheetAsync(string path)
     {
+        SharpRgbaImage? loadedSheet = null;
+        Bitmap? loadedPreview = null;
         try
         {
+            loadedSheet = SixLabors.ImageSharp.Image.Load<Rgba32>(path);
+            loadedPreview = new Bitmap(path);
             DisposeFramePreviews();
             _assignments.Clear();
             ClearIcon();
             _sheetImage?.Dispose();
             _sheetPreviewBitmap?.Dispose();
-            _sheetImage = SixLabors.ImageSharp.Image.Load<Rgba32>(path);
-            _sheetPreviewBitmap = new Bitmap(path);
+            _sheetImage = loadedSheet;
+            _sheetPreviewBitmap = loadedPreview;
+            loadedSheet = null;
+            loadedPreview = null;
             _sheetPath = path;
             _sheetInfoText.Text = $"{Path.GetFileName(path)}\nWidth: {_sheetImage.Width}px\nHeight: {_sheetImage.Height}px";
             long decodedBytes = (long)_sheetImage.Width * _sheetImage.Height * 4;
             _sheetFileSizeText.Text = $"File size: {FormatFileSize(new FileInfo(path).Length)}\nImage memory: {FormatFileSize(decodedBytes)}";
             ClearAnimationFrames();
+            _sliceGridStatusText.Text = string.Empty;
             _sheetPreviewControl.SetSheet(_sheetPreviewBitmap, _sheetImage.Width, _sheetImage.Height);
             GuessImportGridFromSheet();
             RefreshImportPreviewFromUi();
@@ -815,6 +903,11 @@ public sealed class MainWindow : Window
         catch (Exception ex)
         {
             await ShowMessageAsync("Import failed", ex.Message);
+        }
+        finally
+        {
+            loadedSheet?.Dispose();
+            loadedPreview?.Dispose();
         }
     }
 
@@ -849,6 +942,12 @@ public sealed class MainWindow : Window
     {
         if (!TryReadImportGridSettings())
             return;
+
+        if (_sheetImage != null && _importGridSettings.GetBoundsError(_sheetImage.Width, _sheetImage.Height) is { } error)
+        {
+            _importGridStatusText.Text = "Grid not applied. " + error;
+            return;
+        }
 
         SetNumber(_rowsText, ReadNumber(_importRowsText));
         SetNumber(_columnsText, ReadNumber(_importColumnsText));
@@ -923,9 +1022,10 @@ public sealed class MainWindow : Window
 
         int expectedCells = _importGridSettings.Rows * _importGridSettings.Columns;
         int visibleCells = CountVisibleImportGridCells();
-        _importGridStatusText.Text = visibleCells == expectedCells
+        var error = _importGridSettings.GetBoundsError(_sheetImage.Width, _sheetImage.Height);
+        _importGridStatusText.Text = error == null
             ? $"Previewing {visibleCells} slice box(es)."
-            : $"Previewing {visibleCells}/{expectedCells} slice box(es); some fall outside the sheet.";
+            : $"Only {visibleCells}/{expectedCells} whole cells fit. " + error;
     }
 
     private int CountVisibleImportGridCells()
@@ -938,12 +1038,7 @@ public sealed class MainWindow : Window
         {
             for (int column = 0; column < _importGridSettings.Columns; column++)
             {
-                int x = _importGridSettings.OffsetX + column * (_importGridSettings.CellWidth + _importGridSettings.SpacingX);
-                int y = _importGridSettings.OffsetY + row * (_importGridSettings.CellHeight + _importGridSettings.SpacingY);
-                if (x < _sheetImage.Width &&
-                    y < _sheetImage.Height &&
-                    x + _importGridSettings.CellWidth > 0 &&
-                    y + _importGridSettings.CellHeight > 0)
+                if (_importGridSettings.ContainsCell(row, column, _sheetImage.Width, _sheetImage.Height))
                 {
                     visible++;
                 }
@@ -969,37 +1064,55 @@ public sealed class MainWindow : Window
     private void ApplyGridFromUi()
     {
         if (!TryReadGridSettings())
+        {
+            _sliceGridStatusText.Text = "Grid values must be valid numbers.";
             return;
+        }
 
         if (_sheetImage == null)
         {
-            _framePanel.Children.Clear();
-            DisposeFramePreviews();
+            _sliceGridStatusText.Text = "No sprite sheet loaded. Drop images here to add individual frames.";
+            return;
+        }
+
+        // Validate before disposing previews or changing assignments. A grid that
+        // overhangs by even one pixel must not silently discard an entire row/column.
+        if (_gridSettings.GetBoundsError(_sheetImage.Width, _sheetImage.Height) is { } error)
+        {
+            _sliceGridStatusText.Text = "Grid not applied; existing frames kept. " + error;
             return;
         }
 
         var previousAssignments = _assignments
-            .Select(pair => new { FileName = pair.Key, FrameIndex = pair.Value.Index })
+            .Select(pair => new { FileName = pair.Key, FrameId = pair.Value.Id })
             .ToList();
-
-        DisposeFramePreviews();
-        _frames = ImageSlicer.Slice(_sheetImage, _gridSettings);
+        var oldSheetFrames = _frames.Where(frame => !frame.IsImported).ToDictionary(frame => frame.Index);
+        var importedFrames = _frames.Where(frame => frame.IsImported).ToList();
+        // Build first so a failed slice leaves the current session intact.
+        var sheetFrames = ImageSlicer.Slice(_sheetImage, _gridSettings);
+        foreach (var frame in sheetFrames)
+            if (oldSheetFrames.TryGetValue(frame.Index, out var previous))
+                frame.Id = previous.Id;
+        foreach (var frame in oldSheetFrames.Values)
+            frame.Preview?.Dispose();
+        _frames = sheetFrames.Concat(importedFrames).ToList();
+        RenumberFrames();
+        _sliceGridStatusText.Text = $"Sliced {sheetFrames.Count} of {(long)_gridSettings.Rows * _gridSettings.Columns} sheet frames. {_frames.Count} frames total.";
         _assignments.Clear();
         foreach (var frame in _frames)
             frame.AssignedFileNames.Clear();
 
         foreach (var assignment in previousAssignments)
         {
-            var frame = _frames.FirstOrDefault(candidate => candidate.Index == assignment.FrameIndex);
+            var frame = _frames.FirstOrDefault(candidate => candidate.Id == assignment.FrameId);
             if (frame == null)
                 continue;
-
             _assignments[assignment.FileName] = frame;
             frame.AssignedFileNames.Add(assignment.FileName);
             frame.AssignedFileNames.Sort(StringComparer.OrdinalIgnoreCase);
         }
 
-        if (_iconFrameIndex.HasValue && !_frames.Any(frame => frame.Index == _iconFrameIndex.Value))
+        if (_iconFrameId.HasValue && !_frames.Any(frame => frame.Id == _iconFrameId.Value))
             ClearIcon();
         else
             RefreshIconPreview();
@@ -1208,7 +1321,7 @@ public sealed class MainWindow : Window
     {
         if (_selectedFrame == null)
         {
-            _exportStatusText.Text = "Select a sliced frame first.";
+            _exportStatusText.Text = "Select a frame first.";
             return;
         }
 
@@ -1264,8 +1377,8 @@ public sealed class MainWindow : Window
 
     private void AddFrameToAnimation(SlicedFrame frame)
     {
-        _animationFrameIndexes.Add(frame.Index);
-        _selectedAnimationEntryIndex = _animationFrameIndexes.Count - 1;
+        _animationFrameIds.Add(frame.Id);
+        _selectedAnimationEntryIndex = _animationFrameIds.Count - 1;
         _animatePlaybackIndex = _selectedAnimationEntryIndex;
         _animateInfoText.Text = $"Added frame {frame.Index + 1}.";
 
@@ -1281,21 +1394,21 @@ public sealed class MainWindow : Window
         PruneMissingAnimationFrames();
         _animationAssignedPanel.Children.Clear();
 
-        if (_animationFrameIndexes.Count == 0)
+        if (_animationFrameIds.Count == 0)
         {
             _animationAssignedPanel.Children.Add(new TextBlock
             {
-                Text = "No frames assigned. Select 5 Animate, then click sliced frames.",
+                Text = "No frames assigned. Select 5 Animate, then click frames.",
                 Foreground = Brushes.LightGray,
                 TextWrapping = TextWrapping.Wrap
             });
             return;
         }
 
-        for (int i = 0; i < _animationFrameIndexes.Count; i++)
+        for (int i = 0; i < _animationFrameIds.Count; i++)
         {
             int entryIndex = i;
-            var frame = FindFrameByIndex(_animationFrameIndexes[i]);
+            var frame = FindFrameById(_animationFrameIds[i]);
             if (frame == null)
                 continue;
 
@@ -1338,10 +1451,10 @@ public sealed class MainWindow : Window
         if (!IsValidAnimationEntryIndex(_selectedAnimationEntryIndex))
             return;
 
-        _animationFrameIndexes.RemoveAt(_selectedAnimationEntryIndex);
-        if (_selectedAnimationEntryIndex >= _animationFrameIndexes.Count)
-            _selectedAnimationEntryIndex = _animationFrameIndexes.Count - 1;
-        _animatePlaybackIndex = Math.Clamp(_selectedAnimationEntryIndex, 0, Math.Max(0, _animationFrameIndexes.Count - 1));
+        _animationFrameIds.RemoveAt(_selectedAnimationEntryIndex);
+        if (_selectedAnimationEntryIndex >= _animationFrameIds.Count)
+            _selectedAnimationEntryIndex = _animationFrameIds.Count - 1;
+        _animatePlaybackIndex = Math.Clamp(_selectedAnimationEntryIndex, 0, Math.Max(0, _animationFrameIds.Count - 1));
         RefreshAnimatePanel();
         ShowAnimateFrame();
     }
@@ -1352,11 +1465,11 @@ public sealed class MainWindow : Window
             return;
 
         int targetIndex = _selectedAnimationEntryIndex + direction;
-        if (targetIndex < 0 || targetIndex >= _animationFrameIndexes.Count)
+        if (targetIndex < 0 || targetIndex >= _animationFrameIds.Count)
             return;
 
-        (_animationFrameIndexes[_selectedAnimationEntryIndex], _animationFrameIndexes[targetIndex]) =
-            (_animationFrameIndexes[targetIndex], _animationFrameIndexes[_selectedAnimationEntryIndex]);
+        (_animationFrameIds[_selectedAnimationEntryIndex], _animationFrameIds[targetIndex]) =
+            (_animationFrameIds[targetIndex], _animationFrameIds[_selectedAnimationEntryIndex]);
         _selectedAnimationEntryIndex = targetIndex;
         _animatePlaybackIndex = targetIndex;
         RefreshAnimatePanel();
@@ -1368,7 +1481,7 @@ public sealed class MainWindow : Window
         _animateTimer.Stop();
         _isAnimatePlaying = false;
         _animatePlayPauseButton.Content = "Play";
-        _animationFrameIndexes.Clear();
+        _animationFrameIds.Clear();
         _selectedAnimationEntryIndex = -1;
         _animatePlaybackIndex = 0;
         RefreshAnimatePanel();
@@ -1385,7 +1498,7 @@ public sealed class MainWindow : Window
             return;
         }
 
-        if (_animationFrameIndexes.Count == 0)
+        if (_animationFrameIds.Count == 0)
         {
             _animateInfoText.Text = "Add frames before playing the custom animation.";
             return;
@@ -1434,9 +1547,9 @@ public sealed class MainWindow : Window
     private IReadOnlyList<SlicedFrame> GetAnimationFrames()
     {
         var frames = new List<SlicedFrame>();
-        foreach (int frameIndex in _animationFrameIndexes)
+        foreach (Guid frameId in _animationFrameIds)
         {
-            var frame = FindFrameByIndex(frameIndex);
+            var frame = FindFrameById(frameId);
             if (frame != null)
                 frames.Add(frame);
         }
@@ -1444,29 +1557,29 @@ public sealed class MainWindow : Window
         return frames;
     }
 
-    private SlicedFrame? FindFrameByIndex(int frameIndex)
+    private SlicedFrame? FindFrameById(Guid frameId)
     {
-        return _frames.FirstOrDefault(frame => frame.Index == frameIndex);
+        return _frames.FirstOrDefault(frame => frame.Id == frameId);
     }
 
     private bool IsValidAnimationEntryIndex(int entryIndex)
     {
-        return entryIndex >= 0 && entryIndex < _animationFrameIndexes.Count;
+        return entryIndex >= 0 && entryIndex < _animationFrameIds.Count;
     }
 
     private void PruneMissingAnimationFrames()
     {
-        if (_animationFrameIndexes.Count == 0)
+        if (_animationFrameIds.Count == 0)
             return;
 
-        var validIndexes = _frames.Select(frame => frame.Index).ToHashSet();
-        _animationFrameIndexes.RemoveAll(index => !validIndexes.Contains(index));
+        var validIndexes = _frames.Select(frame => frame.Id).ToHashSet();
+        _animationFrameIds.RemoveAll(index => !validIndexes.Contains(index));
 
-        if (_selectedAnimationEntryIndex >= _animationFrameIndexes.Count)
-            _selectedAnimationEntryIndex = _animationFrameIndexes.Count - 1;
-        if (_animationFrameIndexes.Count == 0)
+        if (_selectedAnimationEntryIndex >= _animationFrameIds.Count)
+            _selectedAnimationEntryIndex = _animationFrameIds.Count - 1;
+        if (_animationFrameIds.Count == 0)
             _selectedAnimationEntryIndex = -1;
-        _animatePlaybackIndex = Math.Clamp(_animatePlaybackIndex, 0, Math.Max(0, _animationFrameIndexes.Count - 1));
+        _animatePlaybackIndex = Math.Clamp(_animatePlaybackIndex, 0, Math.Max(0, _animationFrameIds.Count - 1));
     }
 
     private void RefreshPlayback()
@@ -1652,30 +1765,30 @@ public sealed class MainWindow : Window
     {
         if (_selectedFrame == null)
         {
-            _exportStatusText.Text = "Select a sliced frame before setting the app icon.";
+            _exportStatusText.Text = "Select a frame before setting the app icon.";
             return;
         }
 
-        _iconFrameIndex = _selectedFrame.Index;
+        _iconFrameId = _selectedFrame.Id;
         RefreshIconPreview();
     }
 
     private void ClearIcon()
     {
-        _iconFrameIndex = null;
+        _iconFrameId = null;
         _iconPreviewImage.Source = null;
         _iconInfoText.Text = "No app icon frame selected.";
     }
 
     private void RefreshIconPreview()
     {
-        if (!_iconFrameIndex.HasValue)
+        if (!_iconFrameId.HasValue)
         {
             ClearIcon();
             return;
         }
 
-        var frame = _frames.FirstOrDefault(candidate => candidate.Index == _iconFrameIndex.Value);
+        var frame = _frames.FirstOrDefault(candidate => candidate.Id == _iconFrameId.Value);
         if (frame == null)
         {
             ClearIcon();
@@ -1700,9 +1813,9 @@ public sealed class MainWindow : Window
 
     private async Task ExportPackAsync()
     {
-        if (_sheetImage == null)
+        if (_frames.Count == 0)
         {
-            await ShowMessageAsync("Export failed", "Import a sprite sheet before exporting.");
+            await ShowMessageAsync("Export failed", "Import a sprite sheet or drop images into Frames before exporting.");
             return;
         }
 
@@ -1726,7 +1839,7 @@ public sealed class MainWindow : Window
         try
         {
             var existing = _assignments.Keys.Where(name => File.Exists(Path.Combine(outputFolder, name))).ToList();
-            bool iconWouldOverwrite = _iconFrameIndex.HasValue && File.Exists(iconOutputPath);
+            bool iconWouldOverwrite = _iconFrameId.HasValue && File.Exists(iconOutputPath);
             int overwriteCount = existing.Count + (iconWouldOverwrite ? 1 : 0);
 
             if (overwriteCount > 0 && !await ConfirmAsync($"Overwrite {overwriteCount} existing file(s) in {outputFolder}?"))
@@ -1746,19 +1859,19 @@ public sealed class MainWindow : Window
 
             foreach (var (fileName, frame) in _assignments)
             {
-                ImageSlicer.ExportFrame(_sheetImage, frame, Path.Combine(outputFolder, fileName));
+                ImageSlicer.ExportFrame(frame, Path.Combine(outputFolder, fileName));
             }
 
-            if (_iconFrameIndex.HasValue)
+            if (_iconFrameId.HasValue)
             {
                 try
                 {
-                    var iconFrame = _frames.FirstOrDefault(frame => frame.Index == _iconFrameIndex.Value);
+                    var iconFrame = _frames.FirstOrDefault(frame => frame.Id == _iconFrameId.Value);
                     if (iconFrame == null)
                         throw new InvalidOperationException("Selected icon frame no longer exists.");
 
                     var iconSizes = GetSelectedIconSizes();
-                    IconExporter.ExportIcon(_sheetImage, iconFrame, iconSizes, iconOutputPath);
+                    IconExporter.ExportIcon(iconFrame, iconSizes, iconOutputPath);
                     iconMessage = $" and app icon ({string.Join(", ", iconSizes)})";
                 }
                 catch (Exception ex)
@@ -1820,9 +1933,9 @@ public sealed class MainWindow : Window
 
     private async Task ExportAnimationAsync(string exportKind)
     {
-        if (_sheetImage == null)
+        if (_frames.Count == 0)
         {
-            await ShowMessageAsync("Animation export failed", "Import and slice a sprite sheet before exporting an animation.");
+            await ShowMessageAsync("Animation export failed", "Import frames before exporting an animation.");
             return;
         }
 
@@ -1864,9 +1977,9 @@ public sealed class MainWindow : Window
             int speed = ReadAnimationSpeed();
 
             if (gif)
-                AnimationExporter.ExportGif(_sheetImage, frames, speed, outputPath);
+                AnimationExporter.ExportGif(frames, speed, outputPath);
             else
-                AnimationExporter.ExportSpriteSheet(_sheetImage, frames, outputPath);
+                AnimationExporter.ExportSpriteSheet(frames, outputPath);
 
             _animateInfoText.Text = gif
                 ? $"Exported GIF to {outputPath}."
@@ -1930,7 +2043,11 @@ public sealed class MainWindow : Window
     private void DisposeFramePreviews()
     {
         foreach (var frame in _frames)
+        {
             frame.Preview?.Dispose();
+            if (frame.IsImported)
+                frame.SourceImage.Dispose();
+        }
 
         _frames = Array.Empty<SlicedFrame>();
         _selectedFrame = null;
@@ -2250,6 +2367,7 @@ public sealed class MainWindow : Window
 public sealed class SpriteSheetPreviewControl : Control
 {
     private readonly Pen _gridPen = new(new SolidColorBrush(Color.FromRgb(80, 255, 90)), 1);
+    private readonly Pen _invalidGridPen = new(Brushes.OrangeRed, 2);
     private readonly IBrush _emptyTextBrush = Brushes.LightGray;
     private Bitmap? _sheet;
     private GridSettings? _grid;
@@ -2334,7 +2452,8 @@ public sealed class SpriteSheetPreviewControl : Control
                     imageRect.Y + clipped.Y * scale,
                     clipped.Width * scale,
                     clipped.Height * scale);
-                context.DrawRectangle(null, _gridPen, drawRect);
+                var pen = _grid.ContainsCell(row, column, _sheetWidth, _sheetHeight) ? _gridPen : _invalidGridPen;
+                context.DrawRectangle(null, pen, drawRect);
             }
         }
     }

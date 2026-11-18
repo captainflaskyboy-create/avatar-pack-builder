@@ -7,13 +7,13 @@ namespace AvatarPackBuilder.Services;
 
 public static class IconExporter
 {
-    public static void ExportIcon(Image<Rgba32> sourceSheet, SlicedFrame sourceFrame, IEnumerable<int> iconSizes, string outputIconPath)
+    public static void ExportIcon(SlicedFrame sourceFrame, IEnumerable<int> iconSizes, string outputIconPath)
     {
         var sizes = iconSizes.Distinct().Where(size => size > 0).OrderBy(size => size).ToList();
         if (sizes.Count == 0)
             throw new InvalidOperationException("Select at least one icon size.");
 
-        using var source = sourceSheet.Clone(ctx => ctx.Crop(new Rectangle(sourceFrame.X, sourceFrame.Y, sourceFrame.Width, sourceFrame.Height)));
+        using var source = ImageSlicer.ExtractFrame(sourceFrame);
         using var stream = File.Create(outputIconPath);
         using var writer = new BinaryWriter(stream);
 

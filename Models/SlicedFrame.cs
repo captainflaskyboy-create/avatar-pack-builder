@@ -4,7 +4,11 @@ namespace AvatarPackBuilder.Models;
 
 public sealed class SlicedFrame
 {
-    public int Index { get; init; }
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public int Index { get; set; }
+    // Source lifetime is owned by the session, not the thumbnail or exporter.
+    public SixLabors.ImageSharp.Image<SixLabors.ImageSharp.PixelFormats.Rgba32> SourceImage { get; init; } = null!;
+    public bool IsImported { get; init; }
     public int Row { get; init; }
     public int Column { get; init; }
     public int X { get; init; }
